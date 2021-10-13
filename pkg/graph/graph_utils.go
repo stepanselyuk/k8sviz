@@ -4,7 +4,11 @@
 package graph
 
 import (
+	"bufio"
+	"encoding/base64"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -14,6 +18,30 @@ import (
 // ex) /icons/pod-128.png
 func (g *Graph) imagePath(kind string) string {
 	return filepath.Join(g.dir, "icons", kind+imageSuffix)
+}
+
+func (g *Graph) imagePathRelative(kind string) string {
+	return filepath.Join("icons", kind+imageSuffix)
+}
+
+func (g *Graph) imagePathBase64(kind string) string {
+	path := filepath.Join(g.dir, "icons", kind+imageSuffix)
+
+	if b64string, ok := g.base64Icons[path]; ok {
+		return "data:image/png;charset=utf-8;base64," + b64string
+	}
+
+	// Open file on disk.
+	f, _ := os.Open(path)
+
+	// Read entire file into byte slice.
+	reader := bufio.NewReader(f)
+	content, _ := ioutil.ReadAll(reader)
+
+	// Encode as base64.
+	encoded := base64.StdEncoding.EncodeToString(content)
+
+	return "data:image/png;charset=utf-8;base64," + encoded
 }
 
 // clusterLabel returns the resource label for namespace
@@ -27,7 +55,7 @@ func (g *Graph) clusterLabel() string {
 // ex)
 //   <<TABLE BORDER="0"><TR><TD><IMG SRC="/icons/pod-128.png" /></TD></TR><TR><TD>my-pod</TD></TR></TABLE>>
 func (g *Graph) resourceLabel(kind, name string) string {
-	return fmt.Sprintf("<<TABLE BORDER=\"0\"><TR><TD><IMG SRC=\"%s\" /></TD></TR><TR><TD>%s</TD></TR></TABLE>>", g.imagePath(kind), name)
+	return fmt.Sprintf("<<TABLE BORDER=\"0\"><TR><TD><IMG SRC=\"%s\" /></TD></TR><TR><TD>%s</TD></TR></TABLE>>", g.imagePathRelative(kind), name)
 }
 
 // clusterName returns name of the graphviz cluster

@@ -22,11 +22,19 @@ type Graph struct {
 	res                 *resources.Resources
 	gviz                *gographviz.Graph
 	whitelistedPodNames map[string]bool
+	base64Icons         map[string]string
 }
 
 // NewGraph returns a Graph of k8s resources
 func NewGraph(res *resources.Resources, dir string) *Graph {
-	g := &Graph{res: res, dir: dir, gviz: gographviz.NewGraph(), whitelistedPodNames: make(map[string]bool, 0)}
+	g := &Graph{
+		res:                 res,
+		dir:                 dir,
+		gviz:                gographviz.NewGraph(),
+		whitelistedPodNames: make(map[string]bool, 0),
+		base64Icons:         make(map[string]string),
+	}
+
 	g.generate()
 
 	return g
@@ -238,7 +246,7 @@ func (g *Graph) generateNodes() {
 				for _, podsList := range pods {
 					for _, pod := range podsList {
 
-						fmt.Printf("%s, %s, %s\n\n", pod["rankName"], pod["resourceName"], pod["resourceLabel"])
+						//fmt.Printf("%s, %s, %s\n\n", pod["rankName"], pod["resourceName"], pod["resourceLabel"])
 
 						err := g.gviz.AddNode(
 							pod["rankName"],
