@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/awalterschulze/gographviz"
@@ -17,14 +18,15 @@ import (
 
 // Graph represents a graph of k8s resources
 type Graph struct {
-	dir  string
-	res  *resources.Resources
-	gviz *gographviz.Graph
+	dir                 string
+	res                 *resources.Resources
+	gviz                *gographviz.Graph
+	whitelistedPodNames map[string]bool
 }
 
 // NewGraph returns a Graph of k8s resources
 func NewGraph(res *resources.Resources, dir string) *Graph {
-	g := &Graph{res: res, dir: dir, gviz: gographviz.NewGraph()}
+	g := &Graph{res: res, dir: dir, gviz: gographviz.NewGraph(), whitelistedPodNames: make(map[string]bool, 0)}
 	g.generate()
 
 	return g
@@ -197,7 +199,63 @@ func (g *Graph) generateNodes() {
 	// so that the same resource types are placed in the same rank.
 	for r, rankRes := range resources.ResourceTypes {
 		for _, resType := range strings.Fields(rankRes) {
+			fmt.Printf("%s: %d\n", resType, len(g.res.GetResourceNames(resType)))
+
+			if resType == "pod" {
+
+				// compress multiple pods from the same rs to no more than {2 + more-icon + 2} and only if this is not pod from a statefulset
+				var pods = map[string][]map[string]string{}
+				m1 := regexp.MustCompile(`-\w+$`)
+
+				for _, name := range g.res.GetResourceNames(resType) {
+
+					rsName := m1.ReplaceAllString(name, "")
+					//fmt.Printf("%s, %s, %s, %s, %s\n\n", rsName, name, g.rankName(r), g.resourceName(resType, name), g.resourceLabel(resType, name))
+
+					if _, ok := pods[rsName]; !ok {
+						pods[rsName] = make([]map[string]string, 0)
+					}
+
+					// this condition will be true when there are more than 3 pods under a RS
+					if len(pods[rsName]) == 3 {
+
+						// adding special element "more" in the middle
+						pods[rsName][1]["resourceLabel"] = g.resourceLabel("more", "["+rsName+"-...]")
+
+						continue
+					}
+
+					pods[rsName] = append(pods[rsName], map[string]string{
+						"name":          name,
+						"rankName":      g.rankName(r),
+						"resourceName":  g.resourceName(resType, name),
+						"resourceLabel": g.resourceLabel(resType, name),
+					})
+
+					g.whitelistedPodNames[name] = true
+				}
+
+				for _, podsList := range pods {
+					for _, pod := range podsList {
+
+						fmt.Printf("%s, %s, %s\n\n", pod["rankName"], pod["resourceName"], pod["resourceLabel"])
+
+						err := g.gviz.AddNode(
+							pod["rankName"],
+							pod["resourceName"],
+							map[string]string{"label": pod["resourceLabel"], "penwidth": "0"},
+						)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "Failed to add node %s to subgraph %s: %v\n", pod["resourceName"], pod["rankName"], err)
+						}
+					}
+				}
+
+				continue
+			}
+
 			for _, name := range g.res.GetResourceNames(resType) {
+				//fmt.Printf("%s, %s, %s, %s\n\n", name, g.rankName(r), g.resourceName(resType, name), g.resourceLabel(resType, name))
 				err := g.gviz.AddNode(g.rankName(r), g.resourceName(resType, name),
 					map[string]string{"label": g.resourceLabel(resType, name), "penwidth": "0"})
 				if err != nil {
@@ -243,7 +301,17 @@ func (g *Graph) genPodOwnerRef() {
 	// ```
 	// rs_my_replicaset->pod_my_pod [ style=dashed ];
 	// ```
+	fmt.Fprintf(os.Stderr, "%+v\n", g.whitelistedPodNames)
+
 	for _, pod := range g.res.Pods.Items {
+
+		if _, ok := g.whitelistedPodNames[pod.Name]; !ok {
+			fmt.Fprintf(os.Stderr, "%s: No\n", pod.Name)
+			continue
+		}
+
+		fmt.Fprintf(os.Stderr, "%s: Yes\n", pod.Name)
+
 		g.genOwnerRef("pod", &pod)
 	}
 }
@@ -337,6 +405,11 @@ func (g *Graph) genPvcPodRef() {
 	// pod_my_pod->pvc_my_persistentvolumeclaim[ dir=none ];
 	// ```
 	for _, pod := range g.res.Pods.Items {
+
+		if _, ok := g.whitelistedPodNames[pod.Name]; !ok {
+			continue
+		}
+
 		for _, vol := range pod.Spec.Volumes {
 			if vol.VolumeSource.PersistentVolumeClaim != nil {
 				if !g.res.HasResource("pvc", vol.VolumeSource.PersistentVolumeClaim.ClaimName) {
@@ -368,6 +441,11 @@ func (g *Graph) genSvcPodRef() {
 		}
 		// Check if pod has all labels specified in svc.Spec.Selector
 		for _, pod := range g.res.Pods.Items {
+
+			if _, ok := g.whitelistedPodNames[pod.Name]; !ok {
+				continue
+			}
+
 			podLabel := pod.GetLabels()
 			matched := true
 			for selKey, selVal := range svc.Spec.Selector {

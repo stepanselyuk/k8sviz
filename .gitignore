@@ -1,2 +1,6 @@
 bin/
 lib/
+.idea
+k8sviz
+*.dot
+*.svg

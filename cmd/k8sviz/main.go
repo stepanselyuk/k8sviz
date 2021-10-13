@@ -22,10 +22,10 @@ import (
 
 const (
 	defaultNamespace   = "default"
-	defaultOutFile     = "k8sviz.out"
+	defaultOutFile     = ""
 	defaultOutType     = "dot"
 	descNamespaceOpt   = "namespace to visualize"
-	descOutFileOpt     = "output filename"
+	descOutFileOpt     = "output filename (default namespace-{namespace}.{type})"
 	descOutTypeOpt     = "type of output"
 	descShortOptSuffix = " (shorthand)"
 )
@@ -56,6 +56,10 @@ func init() {
 	flag.StringVar(&outType, "type", defaultOutType, descOutTypeOpt)
 	flag.StringVar(&outType, "t", defaultOutType, descOutTypeOpt+descShortOptSuffix)
 	flag.Parse()
+
+	if outFile == "" {
+		outFile = "namespace-" + namespace + "." + outType
+	}
 
 	// use the current context in kubeconfig
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)

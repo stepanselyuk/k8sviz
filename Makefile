@@ -34,6 +34,7 @@ build:
 	@echo "[Build]"
 	mkdir -p bin/
 	GO111MODULE=on go build -o bin/k8sviz ./cmd/k8sviz
+	mv bin/k8sviz ./
 
 release: test build test-e2e
 
